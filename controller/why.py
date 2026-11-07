@@ -16,6 +16,16 @@ import sqlite3
 DAY = 1440
 
 
+CAUSES = {
+    "welcome_message": {"promote", "rollback", "arm_dropped", "experiment_start", "promotion_blocked", "adopt_supervisor"},
+    "voice": {"promote", "rollback", "arm_dropped", "experiment_start", "promotion_blocked", "adopt_supervisor"},
+    "caller_id": {"did_flagged", "did_probe", "did_active"},
+    "prompt_version": {"halluc_detected", "halluc_fix_chosen", "halluc_suspect", "halluc_fix_failed"},
+    "schedule": {"calltime_plan", "calltime_revert"},
+    "cohorts": {"cohorts_defined"},
+}
+
+
 def parse_t(s: str) -> int:
     d, hm = s.strip().upper().lstrip("D").split()
     h, m = hm.split(":")
@@ -52,11 +62,14 @@ def explain_version(c, wf, row, out):
                 out.append("  auto-applied under the workflow's auto-apply policy (no human approval needed)")
         for m2, kind, summ, _ in dec:
             out.append(f"  {ts(m2)} [{kind}] {summ}")
-        # the learning decisions that led to it: same wf, shortly before the proposal
-        cause = c.execute("SELECT minute, kind, summary FROM decisions WHERE wf=? AND minute <= ? AND minute >= ? AND kind IN "
-                          "('promote','rollback','arm_dropped','did_flagged','did_probe','halluc_fix_chosen','halluc_detected',"
-                          "'experiment_start','calltime_plan','calltime_revert','cohorts_defined') ORDER BY id DESC LIMIT 6",
-                          (wf, p[3] if p and p[3] is not None else m or 0, (p[3] or m or 0) - 2 * DAY)).fetchall()
+        # the learning decisions that led to it: same wf, same dims, in the 2 days before the proposal
+        kinds = set()
+        for d in json.loads(dims or "[]"):
+            kinds |= CAUSES.get(d, set())
+        q = ",".join("?" * len(kinds)) or "''"
+        t_end = p[3] if p and p[3] is not None else (m or 0)
+        cause = c.execute(f"SELECT minute, kind, summary FROM decisions WHERE wf=? AND minute <= ? AND minute >= ? "
+                          f"AND kind IN ({q}) ORDER BY id DESC LIMIT 6", (wf, t_end, t_end - 2 * DAY, *kinds)).fetchall()
         if cause:
             out.append("  evidence trail:")
             for m2, kind, summ in reversed(cause):

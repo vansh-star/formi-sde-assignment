@@ -66,6 +66,8 @@ class Governance:
             try:
                 a = self.sim.get(f"/approvals/{aid}")
             except ApiError as e:
+                if e.status == 404:   # the simulator doesn't know it (new world): don't let it block the workflow
+                    self._set(pid, "abandoned", now, reasons=[str(e)])
                 log.warning("approval %s: %s", aid, e)
                 continue
             st = a["status"]

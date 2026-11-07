@@ -189,6 +189,11 @@ class Controller:
                 st["urgent"] = False
                 e.save(st)
 
+        did_st = self.s.state(wf, "did") or {}
+        cur_did = K.dist(cfg, "default", "caller_id")
+        if any(v.get("urgent") for v in did_st.values()) and \
+                all(cur_did.get(o, 0) == 0 for o, v in did_st.items() if v["status"] == "flagged"):
+            self.dids[wf].clear_urgent()   # protective goal met: flagged numbers carry no traffic
         dtgt, durgent = self.dids[wf].target(K.dist(t, "default", "caller_id"))
         if dtgt and not ctx.owned_by_supervisor("caller_id", now):
             if K.tv(K.dist(t, "default", "caller_id"), dtgt) > 1e-6:
@@ -239,7 +244,13 @@ class Controller:
         conn = self._per_day(wf)[1]
         gain = (exp_rate(new) - exp_rate(old)) * conn if inc_rate is not None else 0.0
         st_name = st["status"]
-        if st_name == "running":
+        stopped = [o for o in old if old.get(o, 0) > 0 and o not in new and o in st["dropped"]
+                   and "decayed" not in st["dropped"][o].get("why", "")]
+        if stopped and st_name in ("running", "concluded") and not [o for o in new if o not in old]:
+            why = "; ".join(f"{o} {st['dropped'][o].get('rel', 0):+.0%} engagement vs {st['incumbent']}" for o in stopped)
+            rest = f", keep testing {', '.join(st['active'])}" if st["active"] else f", {st['incumbent']} back to 100%"
+            s = f"{e.dim.replace('_', ' ')}: stop testing {', '.join(stopped)} ({why}){rest}"
+        elif st_name == "running":
             s = f"{e.dim.replace('_', ' ')}: test {', '.join(st['active'])} on {int(e.EXPLORE * 100)}% of calls ({st['incumbent']} keeps the rest)"
         elif st_name == "supervisor":
             s = f"{e.dim.replace('_', ' ')}: keep the supervisor's setting"

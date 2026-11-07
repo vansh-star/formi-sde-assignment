@@ -6,5 +6,5 @@
 set -euo pipefail
 SIM_URL="${1:?usage: ./run.sh <SIM_URL>}"
 cd "$(dirname "$0")"
-python -c "import httpx" 2>/dev/null || pip install -q httpx
+python -c "import httpx" 2>/dev/null || pip install -q httpx 2>/dev/null || pip install -q --break-system-packages httpx
 exec python -m controller --url "$SIM_URL" --db "${CONTROLLER_DB:-state/controller.db}" --status-dir "${CONTROLLER_STATUS:-state}"

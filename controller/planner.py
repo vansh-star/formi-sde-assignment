@@ -373,9 +373,25 @@ class CallerIds:
             last_change = self.c.s.one("SELECT MAX(minute) FROM config_versions WHERE wf=? AND changed_dims LIKE '%caller_id%'",
                                        (self.c.wf,))[0]
             now = self.c.s.meta("last_minute", 0) or 0
-            if tv(tgt, current) < self.HYSTERESIS or (last_change is not None and now - last_change < self.REBALANCE_EVERY):
+            gain = self._expected_gain(tgt, current)
+            if tv(tgt, current) < self.HYSTERESIS or (last_change is not None and now - last_change < self.REBALANCE_EVERY
+                                                     and gain < 0.05):
                 return normalise(current), False
         return tgt, urgent
+
+    def _expected_gain(self, tgt, cur):
+        """Relative pickup gain of tgt over cur from the last 24h per-DID rates (unknown DIDs at the mean)."""
+        last = self.c.s.meta("last_minute", 0) or 0
+        rates = {}
+        for o in set(tgt) | set(cur):
+            n, c = self._rate(o, last - DAY)
+            if n >= 100:
+                rates[o] = c / n
+        if not rates:
+            return 0.0
+        m = sum(rates.values()) / len(rates)
+        e = lambda a: sum(w * rates.get(o, m) for o, w in normalise(a).items())
+        return e(tgt) / e(cur) - 1 if e(cur) else 0.0
 
     def clear_urgent(self):
         st = self.c.s.state(self.c.wf, self.key)
@@ -468,25 +484,26 @@ class CallTime:
         return st["weights"]
 
     def verify(self, now, live_since):
-        """Guardrail on overall pickup after the schedule went live (≥ 1 full day), versus history."""
+        """Pickup guardrail after the weights have been live ≥ 24h: after vs the 3 days before, compared
+        within each caller ID (stratified), because DID wear-out moves pickup on its own and would
+        otherwise be blamed on the schedule."""
         st = self.c.s.state(self.c.wf, self.key)
         if not st or st["status"] != "live" or now - live_since < DAY:
             return
-        d0, c0, _, _ = A.window(self.c.s, self.c.wf, -14 * DAY, 0)
-        d1, c1, _, _ = A.window(self.c.s, self.c.wf, live_since, None)
-        flagged = [o for o, v in (self.c.s.state(self.c.wf, "did") or {}).items() if v["status"] == "flagged"]
-        if flagged:
-            q = ",".join("?" * len(flagged))
-            d1, c1, _, _ = A.window(self.c.s, self.c.wf, live_since, None, f" AND d NOT IN ({q})", flagged)
-            d0, c0, _, _ = A.window(self.c.s, self.c.wf, -14 * DAY, 0, f" AND d NOT IN ({q})", flagged)
-        if not d0 or not d1:
+        rows = {}
+        for d, phase, n, c in self.c.s.q(
+                "SELECT d, CASE WHEN day*1440+hour*60 >= ? THEN 1 ELSE 0 END ph, SUM(dials), SUM(conn) FROM agg "
+                "WHERE wf=? AND day >= ? GROUP BY d, ph", (live_since, self.c.wf, (live_since - 3 * DAY) // DAY)):
+            rows.setdefault(d, {})[phase] = (n, c)
+        from .stats import stratified
+        cmp = stratified([(v[1][0], v[1][1], v[0][0], v[0][1]) for v in rows.values() if 0 in v and 1 in v])
+        if cmp is None:
             return
-        p0, p1 = c0 / d0, c1 / d1
-        se = math.sqrt(p0 * (1 - p0) / d0 + p1 * (1 - p1) / d1)
-        st["check"] = {"hist_pickup": round(p0, 4), "live_pickup": round(p1, 4), "n": d1, "at": now}
-        if p1 - p0 < -self.c.guard_drop and (p1 - p0) / se < -3:
+        st["check"] = {**cmp.as_dict(), "at": now, "method": "after vs 3 days before, within caller ID"}
+        if cmp.diff < -self.c.guard_drop and cmp.z < -3:
             st["status"] = "reverted"
             st["urgent"] = True
             self.c.s.decide(now, self.c.wf, "calltime_revert",
-                            f"Call-time weights reverted: pickup {p1:.3f} vs {p0:.3f} before (n={d1})", st["check"])
+                            f"Call-time weights reverted: pickup {cmp.rate_a:.3f} vs {cmp.rate_b:.3f} before, same caller "
+                            f"IDs (diff {cmp.diff:+.3f}, z={cmp.z:.1f})", st["check"])
         self.c.s.set_state(self.c.wf, self.key, st)

@@ -63,6 +63,8 @@ def main(argv=None):
         t1 = time.perf_counter()
         st = sim.get("/sim/state")
         now = st["sim_minute"]
+        if max(store.meta("cursor", -1), store.meta("hist_cursor", -1)) >= st["chunks"] - 1:  # chunk ids are global
+            store.set_meta("ingested_until", now)   # nothing left unread: decisions see the whole world so far
         ctl.credits.refresh(st)
         store.set_meta("last_minute", now)
         decide_ms = ctl.step(now)
