@@ -1,0 +1,8 @@
+{
+  "_comment": "Voluntary limits stricter than policy, from client memos. Policy limits still apply on top.",
+  "kestrel_finance": {
+    "_source": "stakeholders/04_client_ops_supervisor.md: two requests a day, never before 11:00",
+    "max_requests_per_day": 2,
+    "earliest_request_hour": 11
+  }
+}
