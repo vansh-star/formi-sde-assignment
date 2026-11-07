@@ -33,6 +33,7 @@ class Ingestor:
         self.lead_cohort: dict[str, str] = {}
         self.cell_map: dict[str, dict[str, str]] = {}
         self.partitions: dict[str, list] = {}
+        self.hist_cells: dict[str, str] = {}   # lead -> cell during history ingest (spans chunks)
         self.events_total = 0
 
     # ------------------------------------------------------------------ startup
@@ -61,23 +62,25 @@ class Ingestor:
         cursor = self.s.meta("cursor", -1)
         n = 0
         for ch in self.sim.get("/events/chunks", kind="events", after=cursor):
-            n += self.ingest_chunk(ch["chunk"], history=False)
+            n += self.ingest_chunk(ch["chunk"], history=False, until=ch.get("until_minute"))
         return n
 
     def ingest_history(self) -> int:
         cursor = self.s.meta("hist_cursor", -1)
+        if cursor >= 0 and not self.hist_cells:   # resumed mid-history after a crash
+            self.hist_cells = dict(self.s.q("SELECT lead_id, cell FROM leads WHERE day < 0"))
         n = 0
         for ch in self.sim.get("/events/chunks", kind="history", after=cursor):
             n += self.ingest_chunk(ch["chunk"], history=True)
         return n
 
-    def ingest_chunk(self, n: int, history: bool) -> int:
+    def ingest_chunk(self, n: int, history: bool, until: int | None = None) -> int:
         t0 = time.perf_counter()
         text = self.sim.chunk_text(n)
         agg = defaultdict(lambda: [0, 0, 0, 0])
         leads, calls, cfg_events, appr_events = [], [], [], []
         daily = defaultdict(lambda: [0, 0])
-        pending_cells: dict[str, str] = {}
+        pending_cells = self.hist_cells
         count = 0
         last_min = None
         for line in text.splitlines():
@@ -98,7 +101,7 @@ class Ingestor:
                 hal = 1 if conn and ev.get("qa", {}).get("hallucination_flag") else 0
                 key_unit = pending_cells.get(lid) if history else self.lead_cohort.get(lid)
                 if key_unit is None:
-                    key_unit = "default"
+                    key_unit = "?|?|?|?" if history else "default"
                 a = agg[(wf, day, hour, key_unit, var["welcome_message"], var["voice"], var["caller_id"],
                          var["prompt_version"])]
                 a[0] += 1; a[1] += conn; a[2] += eng; a[3] += hal
@@ -143,8 +146,8 @@ class Ingestor:
                 s.x("UPDATE proposals SET reasons=COALESCE(?, reasons) WHERE approval_id=?",
                     (json.dumps(ev.get("reasons") or []), ev["approval_id"]))
             s.set_meta("hist_cursor" if history else "cursor", n)
-            if last_min is not None and not history:
-                s.set_meta("last_event_minute", last_min)
+            if not history and until is not None:
+                s.set_meta("ingested_until", until)   # freshness: decisions see everything up to here
             s.commit()
         except BaseException:
             s.rollback()

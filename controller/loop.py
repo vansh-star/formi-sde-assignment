@@ -92,6 +92,7 @@ class Controller:
         except BaseException:
             s.rollback()
             raise
+        self.ing.hist_cells.clear()
         self.ing.load_maps()
         for wf in self.specs:
             cfg = self.sim.get(f"/workflows/{wf}/config")
@@ -344,7 +345,7 @@ class Controller:
 
     # ------------------------------------------------------------------ metrics (C14)
     def record_metrics(self, now, wall_ms, events, ingest_ms, decide_ms):
-        lag = now - (self.s.meta("last_event_minute", now) or now)
+        lag = now - (self.s.meta("ingested_until", now) or now)   # sim-minutes of world we haven't seen
         pending = self.s.one("SELECT COUNT(*) FROM proposals WHERE status IN ('sending','pending','approved')")[0]
         dec = self.s.one("SELECT COUNT(*) FROM decisions WHERE minute > ?", (now - 60,))[0]
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024

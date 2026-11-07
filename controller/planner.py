@@ -265,12 +265,12 @@ class CallerIds:
         last 6h vs its own previous 3 days: ≥ 25% lower, n ≥ 150, p < 1e-4   and   below the others by ≥ 20%
     Unused numbers go on probation at 10% (explore safely), become active after 300 dials unless clearly
     bad. Active numbers share traffic in proportion to recent pickup² (floor 10%), so volume spreads and no
-    single number burns out. Re-weighting only happens when the target moves by > 0.1 TV (no churn)."""
+    single number burns out. Re-weighting only happens when the target moves by > 0.15 TV and at most daily (no churn)."""
     PROBE = 0.1
     FLOOR = 0.1
     FLAG_WINDOW = 6 * 60
     HYSTERESIS = 0.15
-    REBALANCE_EVERY = 6 * 60
+    REBALANCE_EVERY = DAY   # rotation cadence a supervisor can follow; flags act immediately
 
     def __init__(self, ctx: WFContext):
         self.c = ctx
