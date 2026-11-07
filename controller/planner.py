@@ -155,10 +155,10 @@ class Experiment:
             for (a, c), p in ranked:
                 if p < self.ALPHA_WIN and c.rel >= self.MIN_REL:
                     r = A.compare(recent, a, inc)
-                    if r and r.n_a >= 100 and r.diff < 0:
-                        # won on the cumulative record but is behind over the last 48h: likely already decaying
+                    if r and r.n_a >= 100 and r.diff < c.diff / 2:
+                        # won on the cumulative record but its last-48h edge is under half of it: fading
                         self.c.s.decide(now, self.c.wf, "promotion_blocked",
-                                        f"{self.dim}={a} wins overall ({c.rel:+.1%}) but trails {inc} over the last 48h "
+                                        f"{self.dim}={a} wins overall ({c.rel:+.1%}) but its edge over {inc} in the last 48h is under half that "
                                         f"({r.rel:+.1%}, n={r.n_a}); not promoting a variant that may be fading",
                                         {"overall": c.as_dict(), "recent": r.as_dict()})
                         continue
