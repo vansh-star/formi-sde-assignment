@@ -295,7 +295,7 @@ D3. The rule now:
 - **Rotate**: active numbers share traffic in proportion to recent pickup², with a 10% floor. Rebalance at
   most daily and only if it moves > 0.15 TV, unless the expected gain is ≥ 5%.
 
-This turned out to be the largest lever on the pickup-primary KYC flows (+21% to +28% pickup).
+This turned out to be the largest lever on the pickup-primary KYC flows (+20% to +28% pickup across the three scenarios).
 
 **Guardrail.** Every promotion tests the guardrail KPI with a non-inferiority bound (above). Schedule
 changes have their own guardrail check. Caller-ID moves are evaluated on pickup directly. A change
@@ -342,8 +342,9 @@ daily batch), clipped to [0,1]; safety fixes are floored at 0.9. The expected ga
 run: for welcome/voice, observed per-arm engagement since the experiment started is replayed against the
 old and new allocations (arms with no data are assumed equal to the incumbent and listed as such). For
 caller ID, the last-24h pickup per number is replayed the same way. For schedule, the history model at a
-50% discount. So **exploration scores low** (~0 expected gain) and a proven promotion scores high (0.94
-for W3 → that's the honest number it had at the time). `affected_leads` is defined in assumption 12 and
+50% discount. So **exploration scores low** (the D0 renewal bundle scored 0.22, almost all of it from the
+call-time model) and a proven promotion scores high (W3: 1.0, clipped). That was the honest number at the
+time, and it turned out wrong because W3 was fading (§13). `affected_leads` is defined in assumption 12 and
 shown with its components in the dry run.
 
 **Supervisor edits mid-experiment.** Recorded as a decision and marked as supervisor-owned for 24h.
@@ -518,7 +519,7 @@ table and the status page.
 **public_03 load** (`reports/public_03.md`): +22.4% conclusion rate overall, 55 changes applied (neutral: 16, beneficial: 39).
 
 **Interpretation.**
-- **Where we helped:** pickup, mostly through caller-ID rotation and health (KYC +16% to +28%), and
+- **Where we helped:** pickup, mostly through caller-ID rotation and health (KYC +20% to +28%), and
   engagement through promoted welcome/voice winners (Kestrel voice/welcome, KYC). The Kestrel bad-prompt
   incident is the largest single win on public_02: 310 hallucinated calls under baseline vs 88
   with us.
@@ -566,7 +567,11 @@ table and the status page.
 10. **We adopted a supervisor choice our data says is worse.** On public_02, renewal's supervisor set voice V2 = 100%;
     our test had dropped V2 two days earlier (−18%, p = 0.008, n = 168). The Holm-adjusted evidence was too weak to
     propose overriding them, so we said nothing. The status page should at least show them the number.
-11. `affected_leads` counts leads in affected cohorts, not leads whose *experience* changes (a 10% shift
+11. **Rollback impact scores understate urgency.** The dry run replays per-arm rates over the whole experiment,
+    so the W3 rollback scored 0.14 (W3 still looked good on the full record). It should replay the decay
+    window that triggered the rollback. It's a one-line change; I found it after the final runs and didn't want
+    reports and code to disagree.
+12. `affected_leads` counts leads in affected cohorts, not leads whose *experience* changes (a 10% shift
     reports the whole cohort). It's conservative, and labelled as such in the dry run.
 
 ## 14. If this went to production at Formi next month
