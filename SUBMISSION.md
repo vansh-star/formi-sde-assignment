@@ -1,6 +1,6 @@
 # Outcome-First Agent Loop — Submission
 
-**Name:** Vansh Narang · **Date:** 2026-11-07 · **Hours actually spent (be honest):** [fill in honestly] · **Language / storage:** Python 3.11+ (stdlib + `httpx`) / SQLite (WAL), one file
+**Name:** Vansh Narang · **Date:** 2026-11-07 · **Hours actually spent (be honest):** 11 hours · **Language / storage:** Python 3.11+ (stdlib + `httpx`) / SQLite (WAL), one file
 
 > Built with heavy AI assistance (Claude), as the brief allows. Every rule below has a reason I can defend,
 > and most of the important ones changed after I read the data. The commit history shows that.
